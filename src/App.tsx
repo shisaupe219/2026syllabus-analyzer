@@ -45,8 +45,6 @@ import {
 } from 'recharts';
 import { motion, AnimatePresence } from 'motion/react';
 import html2canvas from 'html2canvas';
-import { GoogleGenAI, Type } from "@google/genai";
-import mammoth from 'mammoth';
 
 import { cn } from '@/src/lib/utils';
 
@@ -961,6 +959,7 @@ export default function App() {
     return errors.length > 0 ? errors : null;
   };
 
+  // ========== 修改后的 handleSyllabusUpload ==========
   const handleSyllabusUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -969,102 +968,45 @@ export default function App() {
     setUploadError(null);
     
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-      
-      let contents: any[] = [];
-      const isWord = file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || file.name.endsWith('.docx');
-      const isPdf = file.type === 'application/pdf' || file.name.endsWith('.pdf');
-
-      if (isWord) {
-        // Extract text from Word document
-        const arrayBuffer = await file.arrayBuffer();
-        const result = await mammoth.extractRawText({ arrayBuffer });
-        const text = result.value;
-        
-        contents = [
-          {
-            parts: [
-              {
-                text: `请从以下教学大纲文本中提取课程信息：课程名称、课程编号、学期、课程性质、学分、课内学时、考核方式、课程目标描述。请以 JSON 格式返回，包含字段：courseName, courseId, semester, courseNature, credits (number), classHours (number), examType, objectiveDescriptions (string array).\n\n大纲文本内容：\n${text}`
-              }
-            ]
-          }
-        ];
-      } else if (isPdf) {
-        // Convert PDF to base64
-        const reader = new FileReader();
-        const base64Promise = new Promise<string>((resolve) => {
-          reader.onload = () => {
-            const base64 = (reader.result as string).split(',')[1];
-            resolve(base64);
-          };
-          reader.readAsDataURL(file);
-        });
-        
-        const base64Data = await base64Promise;
-        
-        contents = [
-          {
-            parts: [
-              {
-                text: "请从这份教学大纲中提取以下课程信息：课程名称、课程编号、学期、课程性质、学分、课内学时、考核方式、课程目标描述。请以 JSON 格式返回，包含字段：courseName, courseId, semester, courseNature, credits (number), classHours (number), examType, objectiveDescriptions (string array)."
-              },
-              {
-                inlineData: {
-                  data: base64Data,
-                  mimeType: "application/pdf"
-                }
-              }
-            ]
-          }
-        ];
-      } else {
-        setUploadError('目前仅支持 PDF 和 Word (.docx) 格式的教学大纲。');
-        setIsParsingSyllabus(false);
-        return;
-      }
-
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: contents,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              courseName: { type: Type.STRING },
-              courseId: { type: Type.STRING },
-              semester: { type: Type.STRING },
-              courseNature: { type: Type.STRING },
-              credits: { type: Type.NUMBER },
-              classHours: { type: Type.NUMBER },
-              examType: { type: Type.STRING },
-              objectiveDescriptions: { 
-                type: Type.ARRAY,
-                items: { type: Type.STRING }
-              }
-            },
-            required: ["courseName", "courseId", "courseNature", "credits", "classHours", "objectiveDescriptions"]
-          }
-        }
+      // 1. 将文件转为 base64 字符串
+      const reader = new FileReader();
+      const fileBase64 = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => {
+          // reader.result 格式为 "data:application/pdf;base64,xxxxx"
+          const base64 = (reader.result as string).split(',')[1];
+          resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
       });
 
-      const result = JSON.parse(response.text);
-      
-      setCourseInfo(prev => ({
-        ...prev,
-        courseName: result.courseName || prev.courseName,
-        courseId: result.courseId || prev.courseId,
-        semester: result.semester || prev.semester,
-        courseNature: result.courseNature || prev.courseNature,
-        credits: result.credits || prev.credits,
-        classHours: result.classHours || prev.classHours,
-        examType: result.examType || prev.examType,
-        objectiveDescriptions: result.objectiveDescriptions || prev.objectiveDescriptions,
-        // Update objective ratios length if needed
-        objectiveRatios: result.objectiveDescriptions ? new Array(result.objectiveDescriptions.length).fill(0) : prev.objectiveRatios
-      }));
+      // 2. 调用 Netlify 函数（函数名必须与您的函数文件名一致，这里为 parse-sys1labs）
+      const response = await fetch('/.netlify/functions/parse-sys1labs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileBase64 })
+      });
 
+      const result = await response.json();
+      if (result.success) {
+        // 3. 用返回的数据更新课程信息
+        const data = result.data;
+        setCourseInfo(prev => ({
+          ...prev,
+          courseName: data.courseName || prev.courseName,
+          courseId: data.courseId || prev.courseId,
+          semester: data.semester || prev.semester,
+          courseNature: data.courseNature || prev.courseNature,
+          credits: data.credits || prev.credits,
+          classHours: data.classHours || prev.classHours,
+          examType: data.examType || prev.examType,
+          objectiveDescriptions: data.objectiveDescriptions || prev.objectiveDescriptions,
+          objectiveRatios: data.objectiveDescriptions ? new Array(data.objectiveDescriptions.length).fill(0) : prev.objectiveRatios
+        }));
+        alert('教学大纲解析成功！');
+      } else {
+        throw new Error(result.error);
+      }
     } catch (error) {
       console.error("Syllabus parsing error:", error);
       setUploadError("教学大纲解析失败，请手动输入或重试。");
@@ -1072,6 +1014,7 @@ export default function App() {
       setIsParsingSyllabus(false);
     }
   };
+  // ========== 修改结束 ==========
 
   // --- Calculations ---
 
@@ -2346,13 +2289,13 @@ export default function App() {
                     <td className="border border-slate-300 p-2">{courseInfo.bookType}</td>
                     <td className="border border-slate-300 p-2 bg-slate-50 font-bold">专业班级</td>
                     <td className="border border-slate-300 p-2">{courseInfo.className}</td>
-                  </tr>
+                   </tr>
                   <tr>
                     <td className="border border-slate-300 p-2 bg-slate-50 font-bold">任课教师</td>
                     <td className="border border-slate-300 p-2">{courseInfo.teacher}</td>
                     <td className="border border-slate-300 p-2 bg-slate-50 font-bold">修读人数</td>
                     <td className="border border-slate-300 p-2" colSpan={3}>{courseInfo.studentCount}</td>
-                  </tr>
+                   </tr>
                 </tbody>
               </table>
             </div>
@@ -3017,7 +2960,7 @@ export default function App() {
                       <th className="p-4 text-xs font-bold text-slate-500 uppercase">优秀 (≥85)</th>
                       <th className="p-4 text-xs font-bold text-slate-500 uppercase">良好 (70-84)</th>
                       <th className="p-4 text-xs font-bold text-slate-500 uppercase">中等 (60-69)</th>
-                      <th className="p-4 text-xs font-bold text-slate-500 uppercase">不及格 (&lt;60)</th>
+                      <th className="p-4 text-xs font-bold text-slate-500 uppercase">不及格 (<60)</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -3032,7 +2975,7 @@ export default function App() {
                       <td className="p-4 font-bold text-slate-400">占比</td>
                       <td className="p-4 text-sm font-semibold text-slate-600">{Math.round((stats.grades['优秀'] / finalData.length) * 100)}%</td>
                       <td className="p-4 text-sm font-semibold text-slate-600">{Math.round((stats.grades['良好'] / finalData.length) * 100)}%</td>
-                      <td className="p-4 text-sm font-semibold text-slate-600">{Math.round((stats.grades['中等'] / finalData.length) * 100)}%</td>
+                      <td className="p-4 text-sm font-semibold text-slate-600">{Math.round((stats.grades['中等'] / finalData.length) * 100)}%</td
                       <td className="p-4 text-sm font-semibold text-slate-600">{Math.round((stats.grades['不及格'] / finalData.length) * 100)}%</td>
                     </tr>
                   </tbody>
