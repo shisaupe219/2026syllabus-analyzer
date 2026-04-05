@@ -2960,7 +2960,7 @@ export default function App() {
                       <th className="p-4 text-xs font-bold text-slate-500 uppercase">优秀 (≥85)</th>
                       <th className="p-4 text-xs font-bold text-slate-500 uppercase">良好 (70-84)</th>
                       <th className="p-4 text-xs font-bold text-slate-500 uppercase">中等 (60-69)</th>
-                      <th className="p-4 text-xs font-bold text-slate-500 uppercase">不及格 (<60)</th>
+                      <th className="p-4 text-xs font-bold text-slate-500 uppercase">不及格 {'<60'}</th>
                     </tr>
                   </thead>
                   <tbody>
