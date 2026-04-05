@@ -2975,7 +2975,7 @@ export default function App() {
                       <td className="p-4 font-bold text-slate-400">占比</td>
                       <td className="p-4 text-sm font-semibold text-slate-600">{Math.round((stats.grades['优秀'] / finalData.length) * 100)}%</td>
                       <td className="p-4 text-sm font-semibold text-slate-600">{Math.round((stats.grades['良好'] / finalData.length) * 100)}%</td>
-                      <td className="p-4 text-sm font-semibold text-slate-600">{Math.round((stats.grades['中等'] / finalData.length) * 100)}%</td
+                      <td className="p-4 text-sm font-semibold text-slate-600">{Math.round((stats.grades['中等'] / finalData.length) * 100)}%</td>
                       <td className="p-4 text-sm font-semibold text-slate-600">{Math.round((stats.grades['不及格'] / finalData.length) * 100)}%</td>
                     </tr>
                   </tbody>
